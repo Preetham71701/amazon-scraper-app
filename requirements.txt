@@ -4,3 +4,4 @@ requests-cache
 pandas
 beautifulsoup4
 lxml
+gunicorn
