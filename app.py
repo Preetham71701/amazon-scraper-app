@@ -41,9 +41,7 @@ PRICE_SEL = (
 )
 
 app = Flask(__name__)
-
-# Global store for results
-all_results = []
+all_results = []  # store across submissions
 
 # ----------------------
 # Scraping Helpers
@@ -81,27 +79,25 @@ def parse_weight_lbs(ws):
     val = float(m.group(1))
     wsl = ws.lower()
     if "ounce" in wsl:
-        lbs = val/16
-    elif "pound" in wsl:
-        lbs = val
-    elif any(x in wsl for x in ["kilogram","kilo","kg"]):
-        lbs = val*2.20462
-    elif "gram" in wsl:
-        lbs = (val/1000)*2.20462
-    else:
-        lbs = 1.0
-    return lbs
+        return val/16
+    if "pound" in wsl:
+        return val
+    if any(x in wsl for x in ["kilogram","kilo","kg"]):
+        return val*2.20462
+    if "gram" in wsl:
+        return (val/1000)*2.20462
+    return 1.0
 
 
 def psych_price(v):
     x = math.ceil(v)
-    candidates = []
-    for unit in [10,100,1000]:
-        base = (x//unit)*unit
-        c = base + (unit-1)
-        if c < x: c += unit
-        candidates.append(c)
-    return min(candidates)
+    cands = []
+    for u in [10,100,1000]:
+        base = (x//u)*u
+        c = base + (u-1)
+        if c < x: c += u
+        cands.append(c)
+    return min(cands)
 
 
 def compute_tiers(usd, wt):
@@ -111,7 +107,7 @@ def compute_tiers(usd, wt):
     dom = wt * 200
     total = prod + ship + dom
     fee = total * 0.05
-    gst = (total + fee) * 1.18
+    gst = (total + fee)*1.18
     return {
         '5%':  gst*1.05,
         '10%': gst*1.10,
@@ -122,14 +118,13 @@ def compute_tiers(usd, wt):
 
 
 def pick_ideal(tiers, inr_price):
-    numeric = {k:v for k,v in tiers.items() if v}
-    if not numeric:
-        return None
+    nums = {k:v for k,v in tiers.items() if v}
+    if not nums: return None
     if inr_price:
-        valid = {k:v for k,v in numeric.items() if v <= inr_price}
-        choice = valid[max(valid, key=lambda k: float(k.strip('%')))] if valid else numeric['5%']
+        valid = {k:v for k,v in nums.items() if v <= inr_price}
+        choice = valid[max(valid, key=lambda k: float(k.strip('%')))] if valid else nums['5%']
     else:
-        choice = numeric['25%']
+        choice = nums['25%']
     return psych_price(choice)
 
 # ----------------------
@@ -143,31 +138,35 @@ def scrape_asin(asin):
     price_usd = None; wt_str = None; dims = None; dim_wt = 0.0
     if html_com:
         soup = BeautifulSoup(html_com, 'html.parser')
+        # try primary
         el = soup.select_one(PRICE_SEL)
-        price_usd = parse_price_usd(el.get_text(strip=True).split(' with')[0]) if el else None
+        text = el.get_text(strip=True) if el else None
+        if not text:
+            alt = soup.select_one("#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative")
+            text = alt.get_text(strip=True) if alt else None
+        if text:
+            price_usd = parse_price_usd(text.split(' with')[0])
         # weight
+        db = None
         for th in soup.find_all('th'):
             if 'item weight' in th.get_text(strip=True).lower():
-                td=th.find_next_sibling('td'); wt_str = td.get_text(strip=True) if td else None; break
-        # fallback bullets
+                td = th.find_next_sibling('td'); wt_str = td.get_text(strip=True) if td else None; break
         if not wt_str:
             db = soup.select_one('#detailBullets_feature_div')
             if db:
                 for li in db.find_all('li'):
-                    txt=li.get_text(' ', strip=True).lower()
-                    if 'item weight' in txt:
-                        wt_str = txt.split(':')[1].strip() if ':' in txt else None
-                        break
+                    tmp = li.get_text(' ',strip=True).lower()
+                    if 'item weight' in tmp:
+                        wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
         # dimensions
         for th in soup.find_all('th'):
             if 'dimensions' in th.get_text(strip=True).lower():
-                td=th.find_next_sibling('td'); dims=td.get_text(strip=True) if td else None; break
+                td = th.find_next_sibling('td'); dims = td.get_text(strip=True) if td else None; break
         if not dims and db:
             for li in db.find_all('li'):
-                txt=li.get_text(' ', strip=True).lower()
-                if 'dimensions' in txt:
-                    parts=txt.split(':'); dims=parts[1].strip() if len(parts)>1 else None; break
-        # dim weight
+                tmp = li.get_text(' ',strip=True).lower()
+                if 'dimensions' in tmp:
+                    dims = tmp.split(':')[1].strip() if ':' in tmp else None; break
         if dims:
             nums = re.findall(r'[\d\.]+', dims)
             if len(nums)>=3:
@@ -178,25 +177,30 @@ def scrape_asin(asin):
     if html_in:
         soup = BeautifulSoup(html_in, 'html.parser')
         el2 = soup.select_one(PRICE_SEL)
-        price_inr = parse_price_inr(el2.get_text(strip=True).split(' with')[0]) if el2 else None
+        text2 = el2.get_text(strip=True) if el2 else None
+        if not text2:
+            alt2 = soup.select_one("#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative")
+            text2 = alt2.get_text(strip=True) if alt2 else None
+        if text2:
+            price_inr = parse_price_inr(text2.split(' with')[0])
 
     wt_lbs = parse_weight_lbs(wt_str)
     used_wt = max(wt_lbs, dim_wt)
     tiers = compute_tiers(price_usd or 0, used_wt) if price_usd else {}
     ideal = pick_ideal(tiers, price_inr)
     return {
-        'ASIN': asin,
-        'Amazon.com Price (USD)': f"${price_usd:.2f}" if price_usd else 'N/A',
-        'Amazon.com Weight (lbs)': f"{wt_lbs:.2f}",
-        'Dimensions': dims or 'N/A',
-        'Dim Weight (lbs)': f"{dim_wt:.2f}",
-        **{f"{k} Profit (INR)": f"₹{tiers[k]:.2f}" for k in tiers},
-        'Amazon.in Price (INR)': f"₹{price_inr:.2f}" if price_inr else 'N/A',
-        'Ideal Price (INR)': f"₹{ideal}" if ideal else 'N/A'
+        'ASIN':asin,
+        'Amazon.com Price (USD)':f"${price_usd:.2f}" if price_usd else 'N/A',
+        'Amazon.com Weight (lbs)':f"{wt_lbs:.2f}" ,
+        'Dimensions':dims or 'N/A',
+        'Dim Weight (lbs)':f"{dim_wt:.2f}",
+        **{f"{k} Profit (INR)":f"₹{tiers[k]:.2f}" for k in tiers},
+        'Amazon.in Price (INR)':f"₹{price_inr:.2f}" if price_inr else 'N/A',
+        'Ideal Price (INR)':f"₹{ideal}" if ideal else 'N/A'
     }
 
 # ----------------------
-# Flask Routes & Template
+# Flask Setup
 # ----------------------
 
 @app.after_request
@@ -218,18 +222,20 @@ TEMPLATE = '''
 <head>
   <title>Amazon ASIN Scraper</title>
   <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; background: #f9f9f9; }
-    h1 { text-align: center; color: #333; }
-    .container { max-width: 1000px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f2f4f7; margin: 0; padding: 0; }
+    .container { max-width: 1000px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    h1 { margin: 0 0 20px; font-size: 1.8em; color: #333; text-align: center; }
     form { display: flex; justify-content: center; margin-bottom: 20px; }
-    input[name=asin] { padding: 10px; width: 250px; font-size: 1em; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 10px 16px; margin-left: 8px; font-size: 1em; color: #fff; background: #0073e6; border: none; border-radius: 4px; cursor: pointer; }
+    input[name=asin] { padding: 10px; font-size: 1em; width: 300px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 10px 16px; margin-left: 10px; font-size: 1em; background: #0073e6; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
     button:hover { background: #005bb5; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 12px; font-size: 0.95em; }
-    th { background: #0073e6; color: #fff; position: sticky; top: 0; }
-    tr:nth-child(even) { background: #f2f2f2; }
-    tr:hover { background: #e6f7ff; }
+    #progress-container { width: 100%; background: #e0e0e0; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 20px; }
+    #progress-bar { width: 0; height: 100%; background: #0073e6; transition: width 0.2s ease; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
+    th, td { border: 1px solid #ddd; padding: 12px; }
+    th { background-color: #0073e6; color: #fff; position: sticky; top: 0; }
+    tr:nth-child(even) { background: #f9f9f9; }
+    tr:hover { background: #eef6fc; }
   </style>
 </head>
 <body>
@@ -239,15 +245,27 @@ TEMPLATE = '''
       <input name="asin" placeholder="Enter ASIN (e.g. B08...)" value="{{ asin }}" />
       <button type="submit">Scrape</button>
     </form>
+    <div id="progress-container"><div id="progress-bar"></div></div>
     <table>
       <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
       <tbody>
         {% for row in results %}
-          <tr>{% for h in headers %}<td>{{ row[h] }}</td>{% endfor %}</tr>
+        <tr>{% for h in headers %}<td>{{ row[h] }}</td>{% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var bar = document.getElementById('progress-bar');
+      var width = 0;
+      var interval = setInterval(function() {
+        width += 10;
+        if (width >= 100) { width = 100; clearInterval(interval); }
+        bar.style.width = width + '%';
+      }, 100);
+    });
+  </script>
 </body>
 </html>
 '''
@@ -256,15 +274,8 @@ TEMPLATE = '''
 def index():
     asin = request.args.get('asin', '').strip()
     if asin:
-        new = scrape_asin(asin)
-        all_results.append(new)
-    return render_template_string(
-        TEMPLATE,
-        asin=asin,
-        results=all_results,
-        headers=TABLE_HEADERS
-    )
+        all_results.append(scrape_asin(asin))
+    return render_template_string(TEMPLATE, asin=asin, results=all_results, headers=TABLE_HEADERS)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
