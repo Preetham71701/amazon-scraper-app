@@ -20,6 +20,12 @@ HEADERS = [
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 ]
 
+# CSS selector for both Amazon.com and Amazon.in price
+PRICE_SEL = (
+    "#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative"
+    " > span.aok-offscreen"
+)
+
 DOLLAR_RATE = 87.0  # INR per USD
 app = Flask(__name__)
 
@@ -48,11 +54,7 @@ def scrape_asins(asins):
         price_usd = None
         if html_com:
             soup = BeautifulSoup(html_com, "html.parser")
-            sel = (
-                "#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative "
-                "> span.aok-offscreen"
-            )
-            el = soup.select_one(sel)
+            el = soup.select_one(PRICE_SEL)
             if el:
                 price_usd = el.get_text(strip=True).split(" with")[0]
 
@@ -94,7 +96,7 @@ def scrape_asins(asins):
         price_inr = None
         if html_in:
             soup = BeautifulSoup(html_in, "html.parser")
-            el2 = soup.select_one(sel)
+            el2 = soup.select_one(PRICE_SEL)
             if el2:
                 price_inr = el2.get_text(strip=True).split(" with")[0]
 
@@ -115,12 +117,12 @@ def allow_iframe(response):
     return response
 
 # Flask route
+@app.route('/', methods=['GET'])
 def index():
     asin = request.args.get('asin', '')
     results = []
     if asin:
-        recs = scrape_asins([asin])
-        results = recs
+        results = scrape_asins([asin])
     return render_template_string(
         """
         <!doctype html>
@@ -140,9 +142,6 @@ def index():
         </body></html>
         """, asin=asin, results=results
     )
-
-# Register route
-app.add_url_rule('/', 'index', index)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
