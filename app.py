@@ -84,7 +84,7 @@ def pick_ideal(tiers, inr_price):
 def scrape_asins(asins):
     records = []
     for asin in asins:
-        time.sleep(random.uniform(1, 5))
+        time.sleep(random.uniform(5, 6))  # polite delay (5–6s to avoid detection)
         url_com = f"https://www.amazon.com/dp/{asin}"
         url_in = f"https://www.amazon.in/dp/{asin}"
 
