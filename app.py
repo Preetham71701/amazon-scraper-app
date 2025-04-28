@@ -33,41 +33,48 @@ def get_html(url):
     except:
         return None
 
-# Scraping logic (same as your Colab function, simplified for one ASIN)
+# Scraping logic for ASINs
 def scrape_asins(asins):
     records = []
     for asin in asins:
         time.sleep(random.uniform(1, 5))  # polite delay
         url_com = f"https://www.amazon.com/dp/{asin}"
         url_in = f"https://www.amazon.in/dp/{asin}"
+
         html_com = get_html(url_com)
         html_in = get_html(url_in)
 
-        # Extract price
+        # Extract Amazon.com price
         price_usd = None
         if html_com:
             soup = BeautifulSoup(html_com, "html.parser")
-            sel = "#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative span.aok-offscreen"
+            sel = (
+                "#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative "
+                "> span.aok-offscreen"
+            )
             el = soup.select_one(sel)
             if el:
                 price_usd = el.get_text(strip=True).split(" with")[0]
 
-        # Extract weight
+        # Extract Amazon.com weight
         weight_lbs = 1.0
         if html_com:
             soup = BeautifulSoup(html_com, "html.parser")
-            ths = soup.find_all("th")
-            for th in ths:
+            for th in soup.find_all("th"):
                 if "item weight" in th.get_text(strip=True).lower():
                     td = th.find_next_sibling("td")
                     text = td.get_text(strip=True) if td else None
-                    m = re.match(r"([\d\.]+)", text.replace("\u200e", ""))
-                    if m:
-                        val = float(m.group(1))
-                        weight_lbs = val if "pound" in text.lower() else val/16 if "ounce" in text.lower() else weight_lbs
+                    if text:
+                        m = re.match(r"([\d\.]+)", text.replace("\u200e", ""))
+                        if m:
+                            val = float(m.group(1))
+                            if "ounce" in text.lower():
+                                weight_lbs = val / 16
+                            else:
+                                weight_lbs = val
                     break
 
-        # Extract dimensions & calculate dim weight
+        # Extract dimensions & calculate dimensional weight
         dim_weight = 0.0
         dimensions = None
         if html_com:
@@ -76,11 +83,12 @@ def scrape_asins(asins):
                 if "dimensions" in th.get_text(strip=True).lower():
                     td = th.find_next_sibling("td")
                     dimensions = td.get_text(strip=True) if td else None
-                    nums = re.findall(r"[\d\.]+", dimensions or "")
-                    if len(nums) >= 3:
-                        l, b, h = map(float, nums[:3])
-                        dim_weight = (l * b * h) / 139
                     break
+            if dimensions:
+                nums = re.findall(r"[\d\.]+", dimensions)
+                if len(nums) >= 3:
+                    l, b, h = map(float, nums[:3])
+                    dim_weight = (l * b * h) / 139
 
         # Extract Amazon.in price
         price_inr = None
@@ -90,7 +98,6 @@ def scrape_asins(asins):
             if el2:
                 price_inr = el2.get_text(strip=True).split(" with")[0]
 
-        # Prepare record
         records.append({
             "ASIN": asin,
             "USD Price": price_usd or "N/A",
@@ -101,8 +108,13 @@ def scrape_asins(asins):
         })
     return records
 
+# Allow embedding in iframes
+@app.after_request
+def allow_iframe(response):
+    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    return response
+
 # Flask route
-@app.route('/', methods=['GET'])
 def index():
     asin = request.args.get('asin', '')
     results = []
@@ -112,28 +124,25 @@ def index():
     return render_template_string(
         """
         <!doctype html>
-        <html>
-          <body>
-            <form method="get">
-              ASIN: <input name="asin" value="{{ asin }}"/>
-              <button type="submit">Scrape</button>
-            </form>
-            {% if results %}
-            <table border="1">
-              <tr>
-                {% for k in results[0].keys() %}<th>{{ k }}</th>{% endfor %}
-              </tr>
-              {% for row in results %}
-              <tr>
-                {% for v in row.values() %}<td>{{ v }}</td>{% endfor %}
-              </tr>
-              {% endfor %}
-            </table>
-            {% endif %}
-          </body>
-        </html>
+        <html><body>
+          <form method="get">
+            ASIN: <input name="asin" value="{{ asin }}" />
+            <button type="submit">Scrape</button>
+          </form>
+          {% if results %}
+          <table border="1" cellpadding="5" style="border-collapse:collapse">
+            <tr>{% for k in results[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr>
+            {% for row in results %}
+            <tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </table>
+          {% endif %}
+        </body></html>
         """, asin=asin, results=results
     )
+
+# Register route
+app.add_url_rule('/', 'index', index)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
