@@ -222,20 +222,27 @@ TEMPLATE = '''
 <head>
   <title>Amazon ASIN Scraper</title>
   <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f2f4f7; margin: 0; padding: 0; }
-    .container { max-width: 1000px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f7f9fc; margin: 0; padding: 0; }
+    .container { max-width: 1200px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
     h1 { margin: 0 0 20px; font-size: 1.8em; color: #333; text-align: center; }
-    form { display: flex; justify-content: center; margin-bottom: 20px; }
-    input[name=asin] { padding: 10px; font-size: 1em; width: 300px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 10px 16px; margin-left: 10px; font-size: 1em; background: #0073e6; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    form { display: flex; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+    input[name=asin] { padding: 12px; font-size: 1em; width: 280px; border: 1px solid #ddd; border-radius: 6px; margin-right: 10px; }
+    button { padding: 12px 16px; font-size: 1em; background: #0073e6; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
     button:hover { background: #005bb5; }
+    button#clear-btn { background: #e0e0e0; color: #333; margin-left: 10px; }
+    button#clear-btn:hover { background: #c4c4c4; }
     #progress-container { width: 100%; background: #e0e0e0; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 20px; }
     #progress-bar { width: 0; height: 100%; background: #0073e6; transition: width 0.2s ease; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
-    th, td { border: 1px solid #ddd; padding: 12px; }
+    th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
     th { background-color: #0073e6; color: #fff; position: sticky; top: 0; }
     tr:nth-child(even) { background: #f9f9f9; }
     tr:hover { background: #eef6fc; }
+    @media (max-width: 768px) {
+      .container { padding: 15px; }
+      input[name=asin] { width: 100%; margin-bottom: 10px; }
+      button { width: 100%; margin-top: 10px; }
+    }
   </style>
 </head>
 <body>
@@ -244,6 +251,7 @@ TEMPLATE = '''
     <form method="get">
       <input name="asin" placeholder="Enter ASIN (e.g. B08...)" value="{{ asin }}" />
       <button type="submit">Scrape</button>
+      <button type="button" id="clear-btn" onclick="clearData()">Clear</button>
     </form>
     <div id="progress-container"><div id="progress-bar"></div></div>
     <table>
@@ -265,6 +273,11 @@ TEMPLATE = '''
         bar.style.width = width + '%';
       }, 100);
     });
+    
+    function clearData() {
+      document.querySelector("table tbody").innerHTML = "";
+      document.querySelector("input[name='asin']").value = '';
+    }
   </script>
 </body>
 </html>
