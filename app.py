@@ -9,9 +9,6 @@ import pandas as pd
 from flask import Flask, request, render_template_string, redirect, url_for
 from bs4 import BeautifulSoup
 
-# ----------------------
-# Configuration & Setup
-# ----------------------
 requests_cache.install_cache(
     "amazon_cache", backend="sqlite", expire_after=3600,
     allowable_methods=("GET",), allowable_codes=(200,304)
@@ -34,7 +31,7 @@ HEADERS_LIST = [
     ]
 ]
 
-DOLLAR_RATE = 87.0  # INR per USD
+DOLLAR_RATE = 87.0
 PRICE_SEL = (
     "#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative"
     " > span.aok-offscreen"
@@ -43,9 +40,6 @@ PRICE_SEL = (
 app = Flask(__name__)
 all_results = []
 
-# ----------------------
-# Scraping Helpers
-# ----------------------
 def get_html(url):
     headers = random.choice(HEADERS_LIST)
     try:
@@ -56,17 +50,8 @@ def get_html(url):
         pass
     return None
 
-def parse_price_usd(s):
-    try:
-        return float(s.replace("$","").replace(",",""))
-    except:
-        return None
-
-def parse_price_inr(s):
-    try:
-        return float(s.replace("₹","").replace(",",""))
-    except:
-        return None
+def parse_price_usd(s): return float(s.replace("$","").replace(",","")) if s else None
+def parse_price_inr(s): return float(s.replace("₹","").replace(",","")) if s else None
 
 def parse_weight_lbs(ws):
     if not ws: return 1.0
@@ -74,14 +59,10 @@ def parse_weight_lbs(ws):
     if not m: return 1.0
     val = float(m.group(1))
     wsl = ws.lower()
-    if "ounce" in wsl:
-        return val/16
-    if "pound" in wsl:
-        return val
-    if any(x in wsl for x in ["kilogram","kilo","kg"]):
-        return val*2.20462
-    if "gram" in wsl:
-        return (val/1000)*2.20462
+    if "ounce" in wsl: return val/16
+    if "pound" in wsl: return val
+    if any(x in wsl for x in ["kilogram","kilo","kg"]): return val*2.20462
+    if "gram" in wsl: return (val/1000)*2.20462
     return 1.0
 
 def psych_price(v):
@@ -131,8 +112,7 @@ def scrape_asin(asin):
         if not text:
             alt = soup.select_one("#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative")
             text = alt.get_text(strip=True) if alt else None
-        if text:
-            price_usd = parse_price_usd(text.split(' with')[0])
+        if text: price_usd = parse_price_usd(text.split(' with')[0])
         for th in soup.find_all('th'):
             if 'item weight' in th.get_text(strip=True).lower():
                 td = th.find_next_sibling('td'); wt_str = td.get_text(strip=True) if td else None; break
@@ -140,16 +120,14 @@ def scrape_asin(asin):
         if db and not wt_str:
             for li in db.find_all('li'):
                 tmp = li.get_text(' ',strip=True).lower()
-                if 'item weight' in tmp:
-                    wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
+                if 'item weight' in tmp: wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
         for th in soup.find_all('th'):
             if 'dimensions' in th.get_text(strip=True).lower():
                 td = th.find_next_sibling('td'); dims = td.get_text(strip=True) if td else None; break
         if not dims and db:
             for li in db.find_all('li'):
                 tmp = li.get_text(' ',strip=True).lower()
-                if 'dimensions' in tmp:
-                    dims = tmp.split(':')[1].strip() if ':' in tmp else None; break
+                if 'dimensions' in tmp: dims = tmp.split(':')[1].strip() if ':' in tmp else None; break
         if dims:
             nums = re.findall(r'[\d\.]+', dims)
             if len(nums)>=3:
@@ -164,8 +142,7 @@ def scrape_asin(asin):
         if not text2:
             alt2 = soup.select_one("#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative")
             text2 = alt2.get_text(strip=True) if alt2 else None
-        if text2:
-            price_inr = parse_price_inr(text2.split(' with')[0])
+        if text2: price_inr = parse_price_inr(text2.split(' with')[0])
 
     wt_lbs = parse_weight_lbs(wt_str)
     used_wt = max(wt_lbs, dim_wt)
@@ -217,10 +194,20 @@ TEMPLATE = '''
     tr:nth-child(even) { background: #f9f9f9; }
     tr:hover { background: #eef6fc; }
     @media (max-width: 768px) {
-      table, thead, tbody, th, td, tr { display: block; }
-      th { top: auto; }
-      td { border: none; position: relative; padding-left: 50%; }
-      td::before { position: absolute; top: 12px; left: 12px; width: 45%; white-space: nowrap; font-weight: bold; }
+      table { display: block; }
+      thead { display: none; }
+      tr { display: block; margin-bottom: 10px; background: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 10px; }
+      td { display: block; text-align: right; font-size: 14px; border: none; border-bottom: 1px solid #eee; position: relative; padding-left: 50%; }
+      td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 10px;
+        width: 45%;
+        padding-right: 10px;
+        white-space: nowrap;
+        font-weight: bold;
+        text-align: left;
+      }
     }
   </style>
 </head>
