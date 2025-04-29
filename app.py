@@ -179,34 +179,33 @@ TEMPLATE = '''
   <title>Amazon ASIN Scraper</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f2f4f7; margin: 0; padding: 0; }
-    .container { max-width: 1000px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
-    h1 { font-size: 1.8em; color: #333; text-align: center; margin-bottom: 20px; }
-    form { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 20px; }
-    input[name=asin] { padding: 10px; font-size: 1em; width: 260px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 10px 16px; font-size: 1em; background: #0073e6; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #005bb5; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f0f2f5; }
+    .container { max-width: 1000px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #333; }
+    form { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 20px 0; }
+    input[name=asin] { padding: 10px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; width: 260px; }
+    button { padding: 10px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
     .loader { display: none; margin: 10px auto; border: 6px solid #f3f3f3; border-top: 6px solid #0073e6; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
     @keyframes spin { 100% { transform: rotate(360deg); } }
-    table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
-    th, td { border: 1px solid #ddd; padding: 12px; }
-    th { background-color: #0073e6; color: #fff; position: sticky; top: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    thead { background: #007bff; color: white; }
+    th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
     tr:nth-child(even) { background: #f9f9f9; }
-    tr:hover { background: #eef6fc; }
-    @media (max-width: 768px) {
-      table { display: block; }
+    @media screen and (max-width: 768px) {
+      table, thead, tbody, th, td, tr { display: block; }
       thead { display: none; }
-      tr { display: block; margin-bottom: 10px; background: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 10px; }
-      td { display: block; text-align: right; font-size: 14px; border: none; border-bottom: 1px solid #eee; position: relative; padding-left: 50%; }
+      tr { margin-bottom: 15px; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 10px; }
+      td { position: relative; padding-left: 50%; border: none; border-bottom: 1px solid #eee; }
       td::before {
         content: attr(data-label);
         position: absolute;
         left: 10px;
+        top: 10px;
         width: 45%;
         padding-right: 10px;
-        white-space: nowrap;
         font-weight: bold;
-        text-align: left;
+        white-space: nowrap;
       }
     }
   </style>
