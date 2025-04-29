@@ -6,9 +6,12 @@ import math
 import requests
 import requests_cache
 import pandas as pd
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string
 from bs4 import BeautifulSoup
 
+# ----------------------
+# Configuration & Setup
+# ----------------------
 requests_cache.install_cache(
     "amazon_cache", backend="sqlite", expire_after=3600,
     allowable_methods=("GET",), allowable_codes=(200,304)
@@ -31,7 +34,7 @@ HEADERS_LIST = [
     ]
 ]
 
-DOLLAR_RATE = 87.0
+DOLLAR_RATE = 87.0  # INR per USD
 PRICE_SEL = (
     "#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative"
     " > span.aok-offscreen"
@@ -39,6 +42,10 @@ PRICE_SEL = (
 
 app = Flask(__name__)
 all_results = []
+
+# ----------------------
+# Scraping Helpers
+# ----------------------
 
 def get_html(url):
     headers = random.choice(HEADERS_LIST)
@@ -50,8 +57,17 @@ def get_html(url):
         pass
     return None
 
-def parse_price_usd(s): return float(s.replace("$","").replace(",","")) if s else None
-def parse_price_inr(s): return float(s.replace("₹","").replace(",","")) if s else None
+def parse_price_usd(s):
+    try:
+        return float(s.replace("$","").replace(",",""))
+    except:
+        return None
+
+def parse_price_inr(s):
+    try:
+        return float(s.replace("₹","").replace(",",""))
+    except:
+        return None
 
 def parse_weight_lbs(ws):
     if not ws: return 1.0
@@ -59,10 +75,14 @@ def parse_weight_lbs(ws):
     if not m: return 1.0
     val = float(m.group(1))
     wsl = ws.lower()
-    if "ounce" in wsl: return val/16
-    if "pound" in wsl: return val
-    if any(x in wsl for x in ["kilogram","kilo","kg"]): return val*2.20462
-    if "gram" in wsl: return (val/1000)*2.20462
+    if "ounce" in wsl:
+        return val/16
+    if "pound" in wsl:
+        return val
+    if any(x in wsl for x in ["kilogram","kilo","kg"]):
+        return val*2.20462
+    if "gram" in wsl:
+        return (val/1000)*2.20462
     return 1.0
 
 def psych_price(v):
@@ -101,6 +121,10 @@ def pick_ideal(tiers, inr_price):
         choice = nums['25%']
     return psych_price(choice)
 
+# ----------------------
+# Core Scraper
+# ----------------------
+
 def scrape_asin(asin):
     time.sleep(random.uniform(5,6))
     html_com = get_html(f"https://www.amazon.com/dp/{asin}")
@@ -112,27 +136,30 @@ def scrape_asin(asin):
         if not text:
             alt = soup.select_one("#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative")
             text = alt.get_text(strip=True) if alt else None
-        if text: price_usd = parse_price_usd(text.split(' with')[0])
+        if text:
+            price_usd = parse_price_usd(text.split(' with')[0])
         for th in soup.find_all('th'):
             if 'item weight' in th.get_text(strip=True).lower():
                 td = th.find_next_sibling('td'); wt_str = td.get_text(strip=True) if td else None; break
-        db = soup.select_one('#detailBullets_feature_div')
-        if db and not wt_str:
-            for li in db.find_all('li'):
-                tmp = li.get_text(' ',strip=True).lower()
-                if 'item weight' in tmp: wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
+        if not wt_str:
+            db = soup.select_one('#detailBullets_feature_div')
+            if db:
+                for li in db.find_all('li'):
+                    tmp = li.get_text(' ',strip=True).lower()
+                    if 'item weight' in tmp:
+                        wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
         for th in soup.find_all('th'):
             if 'dimensions' in th.get_text(strip=True).lower():
                 td = th.find_next_sibling('td'); dims = td.get_text(strip=True) if td else None; break
         if not dims and db:
             for li in db.find_all('li'):
                 tmp = li.get_text(' ',strip=True).lower()
-                if 'dimensions' in tmp: dims = tmp.split(':')[1].strip() if ':' in tmp else None; break
+                if 'dimensions' in tmp:
+                    dims = tmp.split(':')[1].strip() if ':' in tmp else None; break
         if dims:
             nums = re.findall(r'[\d\.]+', dims)
             if len(nums)>=3:
                 l,b,h = map(float, nums[:3]); dim_wt = (l*b*h)/139
-
     html_in = get_html(f"https://www.amazon.in/dp/{asin}")
     price_inr = None
     if html_in:
@@ -142,8 +169,8 @@ def scrape_asin(asin):
         if not text2:
             alt2 = soup.select_one("#corePriceDisplay_desktop_feature_div > div.a-section.a-spacing-none.aok-align-center.aok-relative")
             text2 = alt2.get_text(strip=True) if alt2 else None
-        if text2: price_inr = parse_price_inr(text2.split(' with')[0])
-
+        if text2:
+            price_inr = parse_price_inr(text2.split(' with')[0])
     wt_lbs = parse_weight_lbs(wt_str)
     used_wt = max(wt_lbs, dim_wt)
     tiers = compute_tiers(price_usd or 0, used_wt) if price_usd else {}
@@ -192,11 +219,19 @@ TEMPLATE = '''
     thead { background: #007bff; color: white; }
     th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
     tr:nth-child(even) { background: #f9f9f9; }
+
     @media screen and (max-width: 768px) {
       table, thead, tbody, th, td, tr { display: block; }
       thead { display: none; }
       tr { margin-bottom: 15px; background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 10px; }
-      td { position: relative; padding-left: 50%; border: none; border-bottom: 1px solid #eee; }
+      td {
+        position: relative;
+        padding-left: 50%;
+        border: none;
+        border-bottom: 1px solid #eee;
+        white-space: normal;
+        word-break: break-word;
+      }
       td::before {
         content: attr(data-label);
         position: absolute;
@@ -205,7 +240,9 @@ TEMPLATE = '''
         width: 45%;
         padding-right: 10px;
         font-weight: bold;
-        white-space: nowrap;
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: break-word;
       }
     }
   </style>
@@ -241,11 +278,9 @@ TEMPLATE = '''
 def index():
     global all_results
     asin = request.args.get('asin', '').strip()
-    clear = request.args.get('clear')
-    if clear:
+    if 'clear' in request.args:
         all_results = []
-        return redirect(url_for('index'))
-    if asin:
+    elif asin:
         all_results.append(scrape_asin(asin))
     return render_template_string(TEMPLATE, asin=asin, results=all_results, headers=TABLE_HEADERS)
 
