@@ -6,7 +6,7 @@ import math
 import requests
 import requests_cache
 import pandas as pd
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, redirect, url_for
 from bs4 import BeautifulSoup
 
 # ----------------------
@@ -41,12 +41,11 @@ PRICE_SEL = (
 )
 
 app = Flask(__name__)
-all_results = []  # store across submissions
+all_results = []
 
 # ----------------------
 # Scraping Helpers
 # ----------------------
-
 def get_html(url):
     headers = random.choice(HEADERS_LIST)
     try:
@@ -57,20 +56,17 @@ def get_html(url):
         pass
     return None
 
-
 def parse_price_usd(s):
     try:
         return float(s.replace("$","").replace(",",""))
     except:
         return None
 
-
 def parse_price_inr(s):
     try:
         return float(s.replace("₹","").replace(",",""))
     except:
         return None
-
 
 def parse_weight_lbs(ws):
     if not ws: return 1.0
@@ -88,7 +84,6 @@ def parse_weight_lbs(ws):
         return (val/1000)*2.20462
     return 1.0
 
-
 def psych_price(v):
     x = math.ceil(v)
     cands = []
@@ -98,7 +93,6 @@ def psych_price(v):
         if c < x: c += u
         cands.append(c)
     return min(cands)
-
 
 def compute_tiers(usd, wt):
     cost = usd * DOLLAR_RATE
@@ -116,7 +110,6 @@ def compute_tiers(usd, wt):
         '25%': gst*1.25
     }
 
-
 def pick_ideal(tiers, inr_price):
     nums = {k:v for k,v in tiers.items() if v}
     if not nums: return None
@@ -127,18 +120,12 @@ def pick_ideal(tiers, inr_price):
         choice = nums['25%']
     return psych_price(choice)
 
-# ----------------------
-# Core Scraper
-# ----------------------
-
 def scrape_asin(asin):
     time.sleep(random.uniform(5,6))
-    # .com
     html_com = get_html(f"https://www.amazon.com/dp/{asin}")
     price_usd = None; wt_str = None; dims = None; dim_wt = 0.0
     if html_com:
         soup = BeautifulSoup(html_com, 'html.parser')
-        # try primary
         el = soup.select_one(PRICE_SEL)
         text = el.get_text(strip=True) if el else None
         if not text:
@@ -146,19 +133,15 @@ def scrape_asin(asin):
             text = alt.get_text(strip=True) if alt else None
         if text:
             price_usd = parse_price_usd(text.split(' with')[0])
-        # weight
-        db = None
         for th in soup.find_all('th'):
             if 'item weight' in th.get_text(strip=True).lower():
                 td = th.find_next_sibling('td'); wt_str = td.get_text(strip=True) if td else None; break
-        if not wt_str:
-            db = soup.select_one('#detailBullets_feature_div')
-            if db:
-                for li in db.find_all('li'):
-                    tmp = li.get_text(' ',strip=True).lower()
-                    if 'item weight' in tmp:
-                        wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
-        # dimensions
+        db = soup.select_one('#detailBullets_feature_div')
+        if db and not wt_str:
+            for li in db.find_all('li'):
+                tmp = li.get_text(' ',strip=True).lower()
+                if 'item weight' in tmp:
+                    wt_str = tmp.split(':')[1].strip() if ':' in tmp else None; break
         for th in soup.find_all('th'):
             if 'dimensions' in th.get_text(strip=True).lower():
                 td = th.find_next_sibling('td'); dims = td.get_text(strip=True) if td else None; break
@@ -171,7 +154,7 @@ def scrape_asin(asin):
             nums = re.findall(r'[\d\.]+', dims)
             if len(nums)>=3:
                 l,b,h = map(float, nums[:3]); dim_wt = (l*b*h)/139
-    # .in
+
     html_in = get_html(f"https://www.amazon.in/dp/{asin}")
     price_inr = None
     if html_in:
@@ -199,10 +182,6 @@ def scrape_asin(asin):
         'Ideal Price (INR)':f"₹{ideal}" if ideal else 'N/A'
     }
 
-# ----------------------
-# Flask Setup
-# ----------------------
-
 @app.after_request
 def allow_iframe(response):
     response.headers['X-Frame-Options'] = 'ALLOWALL'
@@ -221,62 +200,51 @@ TEMPLATE = '''
 <html>
 <head>
   <title>Amazon ASIN Scraper</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f7f9fc; margin: 0; padding: 0; }
-    .container { max-width: 1200px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
-    h1 { margin: 0 0 20px; font-size: 1.8em; color: #333; text-align: center; }
-    form { display: flex; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
-    input[name=asin] { padding: 12px; font-size: 1em; width: 280px; border: 1px solid #ddd; border-radius: 6px; margin-right: 10px; }
-    button { padding: 12px 16px; font-size: 1em; background: #0073e6; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f2f4f7; margin: 0; padding: 0; }
+    .container { max-width: 1000px; margin: 40px auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    h1 { font-size: 1.8em; color: #333; text-align: center; margin-bottom: 20px; }
+    form { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 20px; }
+    input[name=asin] { padding: 10px; font-size: 1em; width: 260px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 10px 16px; font-size: 1em; background: #0073e6; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
     button:hover { background: #005bb5; }
-    button#clear-btn { background: #e0e0e0; color: #333; margin-left: 10px; }
-    button#clear-btn:hover { background: #c4c4c4; }
-    #progress-container { width: 100%; background: #e0e0e0; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 20px; }
-    #progress-bar { width: 0; height: 100%; background: #0073e6; transition: width 0.2s ease; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95em; }
-    th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+    .loader { display: none; margin: 10px auto; border: 6px solid #f3f3f3; border-top: 6px solid #0073e6; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+    th, td { border: 1px solid #ddd; padding: 12px; }
     th { background-color: #0073e6; color: #fff; position: sticky; top: 0; }
     tr:nth-child(even) { background: #f9f9f9; }
     tr:hover { background: #eef6fc; }
     @media (max-width: 768px) {
-      .container { padding: 15px; }
-      input[name=asin] { width: 100%; margin-bottom: 10px; }
-      button { width: 100%; margin-top: 10px; }
+      table, thead, tbody, th, td, tr { display: block; }
+      th { top: auto; }
+      td { border: none; position: relative; padding-left: 50%; }
+      td::before { position: absolute; top: 12px; left: 12px; width: 45%; white-space: nowrap; font-weight: bold; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Amazon ASIN Scraper</h1>
-    <form method="get">
+    <form method="get" onsubmit="showLoader()">
       <input name="asin" placeholder="Enter ASIN (e.g. B08...)" value="{{ asin }}" />
       <button type="submit">Scrape</button>
-      <button type="button" id="clear-btn" onclick="clearData()">Clear</button>
+      <button type="button" onclick="window.location.href='/?clear=1'">Clear</button>
     </form>
-    <div id="progress-container"><div id="progress-bar"></div></div>
+    <div class="loader" id="loader"></div>
     <table>
       <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
       <tbody>
         {% for row in results %}
-        <tr>{% for h in headers %}<td>{{ row[h] }}</td>{% endfor %}</tr>
+        <tr>{% for h in headers %}<td data-label="{{ h }}">{{ row[h] }}</td>{% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      var bar = document.getElementById('progress-bar');
-      var width = 0;
-      var interval = setInterval(function() {
-        width += 10;
-        if (width >= 100) { width = 100; clearInterval(interval); }
-        bar.style.width = width + '%';
-      }, 100);
-    });
-    
-    function clearData() {
-      document.querySelector("table tbody").innerHTML = "";
-      document.querySelector("input[name='asin']").value = '';
+    function showLoader() {
+      document.getElementById('loader').style.display = 'block';
     }
   </script>
 </body>
@@ -285,7 +253,12 @@ TEMPLATE = '''
 
 @app.route('/', methods=['GET'])
 def index():
+    global all_results
     asin = request.args.get('asin', '').strip()
+    clear = request.args.get('clear')
+    if clear:
+        all_results = []
+        return redirect(url_for('index'))
     if asin:
         all_results.append(scrape_asin(asin))
     return render_template_string(TEMPLATE, asin=asin, results=all_results, headers=TABLE_HEADERS)
